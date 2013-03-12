@@ -1,0 +1,516 @@
+ 
+
+Rohit Reddy B 
+
+ 
+
+Personal Data 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+26 May 1989 
+
+ 
+
+ Date of Birth 
+
+ 
+
+ Address 
+
+26/C, IIITB, Electronic City Phase I, Bangalore – 560100 
+
+ 
+
+ Phone 
+
++91 9964324188 
+
+ 
+
+ Email 
+
+rohit.reddy@iiitb.org 
+
+ 
+
+ Profile 
+
+http://www.iiitb.ac.in/students/rohit-reddy-buchupalli/ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+Objective 
+
+ 
+
+ 
+
+
+
+ 
+
+Intend to work in the project which is challenging and progressive where I can significantly contribute to its growth by 
+being resourceful, flexible and innovative. 
+
+ 
+
+Work 
+Experience 
+
+ 
+
+ 
+
+
+
+ 
+
+Tata Consultancy Services R&D (2010-2011), worked in the areas of In Memory Databases and Inverted Indexing. 
+
+ 
+
+Currently working for HP ESSN R&D in the area of Non-Relational Databases. 
+
+ 
+
+Education 
+
+ 
+
+ 
+
+Master of Technology in Databases and Information Systems 
+
+ 
+
+2011-2013 
+
+International Institute of Information Technology–Bangalore, Bangalore, Karnataka 
+
+ 
+
+2 yrs 
+
+Deemed University 
+
+ 
+
+ 
+
+ 
+
+CGPA: 3.35/4 
+
+ 
+
+ 
+
+ 
+
+Bachelor of Technology in Computer Science 
+
+ 
+
+ 
+
+ 
+
+Aug. 2010 
+
+ 
+
+4 yrs 
+
+Jawaharlal Nehru Technological University, Hyderabad Andhra Pradesh 
+
+ 
+
+ 
+
+ University Second 
+
+ 
+
+ 
+
+ 
+
+ Percentage : 80% 
+
+ 
+
+ 
+
+ 
+
+Intermediate in Maths, Physics and Chemistry 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+June 2006 
+
+ 
+
+ 
+
+2 yrs 
+
+Sri Chaitanya Academy, Tirupati, Andhra Pradesh 
+
+ 
+
+ 
+
+ 
+
+Affiliated to BIE, Hyderabad 
+
+ 
+
+ 
+
+ 
+
+Percentage: 95% 
+
+ 
+
+ 
+
+ 
+
+Primary and Secondary Education 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+June 2004 
+
+ 
+
+ 
+
+12 yrs 
+
+Sree Seshachalam High school, Tirupati, Andhra Pradesh 
+
+ 
+
+ 
+
+Affiliated to Andhra Pradesh State Board, Hyderabad 
+
+ 
+
+ 
+
+Percentage: 87.5% 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+
+
+ 
+
+ 
+
+Achievements and Awards 
+
+ 
+
+ 
+
+ 
+
+
+
+-Under Graduation: University Second in Computer Science Department 
+
+ 
+
+-GATE: 99%ile 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+
+Areas of Interests 
+
+ 
+
+ Data Structures and Algorithms, Relational Databases, Operating Systems (Memory Management), Distributed 
+Databases, Internal Storage and Organization of Data, Data Analytics. 
+
+ 
+
+Research Work 
+
+ 
+
+ 
+
+ 
+
+
+
+In Memory Databases 
+
+ 
+
+Transaction Support in No SQL Databases. 
+
+ 
+
+ 
+
+Projects Undertaken 
+
+ 
+
+ 
+
+Currently 
+
+ Transaction Support in Non-Relational Databases. 
+
+ | Hewlett Packard ESSN R&D 
+
+ 
+
+Role: Developer 
+
+Programming Language: Java, C 
+
+Non-Relational Database: HBASE 
+
+File System: HDFS 
+
+ 
+
+ 
+
+ Developing of Transaction Management facility to non-relational 
+databases especially to HBASE using Snapshot Isolation. For 
+this, we are using our own Relational Database Storage to store 
+meta data for improving the speed. 
+
+ 
+
+ 
+
+
+
+ 
+
+Jul 2012 
+
+ Developing a Relational DBMS(Clone of MySQL) 
+
+ | Prof. Tridib Roy Chowdary 
+
+ 
+
+Role: Team Leader 
+
+Programming Language: C 
+
+ 
+
+ 
+
+ The RDBMS includes three crucial parts DB Engine, Indexing 
+
+and Buffer Management. The DB Engine is responsible for the 
+storage of data in the hard disk, Buffer Management is used to 
+bring the data from hard disk to main memory, Indexing is used 
+for faster accessing. 
+
+ 
+
+
+
+ 
+
+JAN 2012 
+
+ Data De duplication Frame Work 
+
+ | Prof. Chandrasekhar 
+
+ 
+
+ Role: Team Leader 
+
+ Programming Language: Java 
+
+ Databases used: MySQL(Relational Database) 
+
+ HSQLDB(In Memory Database) 
+
+ Data De duplication is a method of reducing storage needs by 
+
+ eliminating duplicate data. This Frame work will provide you a 
+
+ 
+
+ 
+
+ way to identify duplicate data and deleting it. 
+
+
+
+ 
+
+ 
+
+AUG 2011 
+
+ Optimization of a Hamiltonian Path using 2 opt heuristics 
+
+ | Prof. Chandrasekhar 
+
+ 
+
+ Role: Team Leader 
+
+ Programming Language: C 
+
+ Applying 2 opt heuristics for solving the Travelling Sales Man 
+
+ problem from the given graph. 
+
+ 
+
+
+
+ 
+
+JUN 2012 
+
+ QR Code Customization(Currently Working On) 
+
+ 
+
+Role: Developer 
+
+Programming Language: Java 
+
+ | Working for Linqr 
+
+ 
+
+ QR code contains so much of content which is not related 
+
+ to text or URL which you have encoded directly, these will be helpful 
+
+ for error correction. In this project we are deleting some of the 
+
+ code words and making the QR code attractive without affecting 
+
+ the content of it 
+
+ 
+
+ 
+
+ 
+
+
+
+ 
+
+
+ 
+
+Technical Skills 
+
+ 
+
+Programming and Design 
+
+ 
+
+Programming 
+
+C, Java, SQL 
+
+ 
+
+Databases 
+
+ 
+
+ 
+
+ Relational Databases, Non-Relational Databases. 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+Operating 
+
+Systems 
+
+ Linux, Windows 
+
+ 
+
+
+
+ 
+
+
