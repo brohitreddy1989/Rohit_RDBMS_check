@@ -1,0 +1,350 @@
+%{
+#ifndef globalvariables_cpp
+#define globalvariables_cpp
+#include "globalvariables.h"
+
+#include "dbheader.cpp"
+#include "schema.cpp"
+#include "indextree.cpp"
+#include "globalstructures.cpp"
+#include "exprinfo.cpp"
+#include "conversions.cpp"
+#include <iostream>
+#include <sstream>
+#include <stdio.h>
+#include <stdlib.h>
+#include "y.tab.h"
+
+void yyerror(char *s);
+void parse();
+void stk11();
+void stk12();
+int check();
+void putAttribute(string attr);
+void putInsertAttribute(string attr);
+void putTable(string tab);
+void putColoumns(string coloumnName,string dataType,int fieldLength);
+void display(vector<string> disp);
+void displayInt(vector<int> disp);
+void putColList(string col);
+void insertType(int type);
+//methods for integrating with dbengine
+
+void parser_create_database(char *dname);
+void parser_use_database(char *dname);
+void parser_create_table(char *tname,int cols);
+void parser_insert_values(char *tname);
+
+extern "C"
+    {
+        int yylex(void);
+    }
+using namespace std;
+%}
+
+%token SELECT DISTINCT FROM WHERE LE GE EQ NE OR AND SHOW TABLES DATABASES DATABASE CREATE INSERT INTO VALUES UPDATE TABLE SET DROP DELETE EXIT USE
+%right '='
+%left AND OR
+%left '<' '>' LE GE EQ NE
+
+%union {
+	int ival;
+	char *fval;
+	char *sval;
+}
+
+%token <ival>INT
+%token <fval>FLOAT
+%token <sval>ID
+%token <sval>DT
+
+%%
+
+s:selectquery';'{ printf("above is related to select query\n") ; printf("attributes vector display\n"); display(attributes); printf("tables vector display\n"); display(tables); parse(); }
+  | createquery';' { parse(); }
+  | usequery';' { parse(); }
+  | insertquery';' { printf("above is related to insert query\n"); parse(); }
+  | updatequery';' { parse(); } 
+  | dropquery';' { parse(); }
+  | deletequery';' { parse(); }
+  | showquery';' { parse(); }
+  | terminate
+  ;
+terminate: EXIT { exit(-1); }
+	 ;
+usequery: USE ID { dbname=$2; parser_use_database(dbname); }
+	;
+showquery: SHOW TABLES { printf("show tables\n"); }
+	 | SHOW DATABASES { printf("show databases\n"); }
+	 ;
+selectquery:SELECT attrList FROM tableList wrcondn;
+createquery: CREATE DATABASE ID { dbname=$3; parser_create_database(dbname); }
+| CREATE TABLE ID'('newList')' { tabname=$3; parser_create_table(tabname,No_Of_Coloumns); }
+	   ; 
+insertquery: INSERT INTO ID VALUES'('insertList')' { tabname=$3; parser_insert_values(tabname); displayInt(inserttype);}
+	   | INSERT INTO ID'('coloumList')' VALUES'('insertList')' { if(check()==0) exit(-1); printf("table name : %s\n",$3); printf("attributes vector display\n"); 							display(attributes); printf("coloumns vector display\n"); display(coloumnList); }
+	   ;
+updatequery: UPDATE ID SET setcondn wrcondn { printf("update query\n"); };
+dropquery: DROP TABLE ID { printf("table name : %s\n",$3); };
+deletequery: DELETE FROM ID wrcondn { printf("delete query\n"); }
+      | DELETE attrList FROM ID wrcondn { printf("delete query\n"); }
+      ;
+attrList:attrList','ID { putAttribute($3); }
+	| attrList','FLOAT { putAttribute($3); }
+	| FLOAT { putAttribute($1); }
+        | '*' { putAttribute("*"); }
+        | ID { putAttribute($1); }
+        ;
+insertList:insertList','ID { insertType(0); putInsertAttribute($3); stk11();}
+	| insertList','INT { insertType(2); ostringstream z; z<<$3; putInsertAttribute(z.str()); stk11(); }
+	| insertList','FLOAT { insertType(0); putInsertAttribute($3); stk11();}
+	| INT { insertType(2); string x; ostringstream z; z<<$1; x=z.str(); putInsertAttribute(x); stk11(); }
+	| FLOAT { insertType(0); putInsertAttribute($1); stk11(); }
+        | ID { insertType(0); putInsertAttribute($1); stk11(); }
+	| insertList',''"'ID'"' { insertType(0); putInsertAttribute($4); stk11(); }
+	| insertList',''"'FLOAT'"' { insertType(0); putInsertAttribute($4); stk11(); }
+	| '"'FLOAT'"' { insertType(0); putInsertAttribute($2); stk11(); }
+        | '"'ID'"' { insertType(0); putInsertAttribute($2);  stk11();}
+        ;
+tableList:tableList','ID { putTable($3); }
+         | ID { putTable($1); }
+         ;
+coloumList: coloumList','ID { putColList($3); stk12(); }
+	  | ID { putColList($1); stk12(); }
+	  ;
+newList:ID DT'('INT')' { printf("%s\t%s\t%d\n",$1,$2,$4); putColoumns($1,$2,$4); }
+	| ID DT { printf("%s\t%s\t%d\n",$1,$2,sizeof(int)); putColoumns($1,$2,sizeof(int)); }
+	|newList','ID DT'('INT')' { printf("%s\t%s\t%d\n",$3,$4,$6); putColoumns($3,$4,$6); }
+	|newList','ID DT { printf("%s\t%s\t%d\n",$3,$4,sizeof(int)); putColoumns($3,$4,sizeof(int)); }
+	;
+wrcondn:WHERE cond { printf("where condition list\n"); }
+	|
+	;
+setcondn: setcondn','G
+	| G
+	;
+G: F '=' F
+ | F '=' '"'F'"'
+ ;
+cond:cond OR cond 
+       | cond AND cond
+       | E
+       ;
+E:F '=' F { printf(" = "); }
+    | F '=' '"'F'"' { printf(" = "); }
+    | F '<' F { printf(" < "); }
+    | F '>' F { printf(" > "); }
+    | F LE F { printf(" <= "); }
+    | F GE F { printf(" >= "); }
+    | F EQ F { printf(" == "); }
+    | F NE F { printf(" != "); }
+    | F OR F { printf("\n OR \n"); }
+    | F AND F { printf("\n AND \n"); }
+    ;
+F:ID { printf("%s",$1); }
+    | INT { printf("%d ",$1); }
+    | FLOAT { printf("%s ",$1); }
+    ;
+%%
+
+#include <stdio.h>
+extern int yylex();
+extern int yyparse();
+int parser_count=0;
+
+main()
+{
+    attrCount=0;
+    No_Of_Coloumns=0;
+    attributes.clear();
+    tables.clear();
+    coloumns.clear();
+    datatype.clear();
+    fieldlength.clear();
+    printf("enter the query\n");
+    yyparse();
+}
+       
+void parse()
+{
+    attrCount=0;
+    No_Of_Coloumns=0;
+    attributes.clear();
+    tables.clear();
+    coloumns.clear();
+    datatype.clear();
+    fieldlength.clear();
+    printf("enter the query\n");
+    yyparse();
+}
+
+
+void stk11()
+{
+    ++parser_count;
+    printf("in stk11 parser_count : %d\n",parser_count);
+}
+
+void stk12()
+{
+    printf("in stk12 parser_count : %d\n",--parser_count);
+}
+
+int check()
+{
+    if(parser_count!=0){return 0;
+	printf("mismatch of arguments\n");
+	return 1;
+    }
+    else{
+	printf("insert query successful\n");
+	
+    }
+}
+
+void yyerror(char *s) {
+	printf( "EEK, parse error!  Message: %s\n",s);
+	exit(-1);
+}
+
+void putAttribute(string attr)
+{
+attributes.push_back(attr);
+if(attr=="*")
+attrCount=No_Of_Coloumns; // use No_Of_Coloumns by retriving from global structure instead
+else
+attrCount++;
+//put attrCount into the global structure
+}
+
+
+void putInsertAttribute(string attr)
+{
+insertAttributes.push_back(attr);
+}
+
+void putTable(string tab)
+{
+tables.push_back(tab);
+}
+
+void putColoumns(string coloumnName,string dataType,int fieldLength)   // for create table
+{
+coloumns.push_back(coloumnName);
+datatype.push_back(dataType);
+fieldlength.push_back(fieldLength);
+No_Of_Coloumns++;
+//put No_Of_Coloumns into the global structure
+}
+
+void putColList(string col)
+{
+coloumnList.push_back(col);
+}
+
+void insertType(int type)
+{
+inserttype.push_back(type);
+}
+
+void display(vector<string> disp)
+{
+int i;
+for(i=0;i<disp.size();i++)
+cout<<disp[i]<<endl;
+}
+
+void displayInt(vector<int> disp)
+{
+int i;
+for(i=0;i<disp.size();i++)
+cout<<disp[i]<<endl;
+}
+
+
+//methods for integrating with dbengine
+
+void parser_create_database(char *dname)
+{	
+	initialize_defaultavalues();//initializing the page size and globalstructures also
+	bPlusTree bptree;
+	bptree.init_pagesize(PAGE_SIZE);
+	clock_t start=clock();
+	createDatabase(dname);
+	printf("\nTime elapsed for Create Database: %f\n", ((double)clock() - start) / CLOCKS_PER_SEC);
+}
+
+void parser_use_database(char *dname)
+{
+	usedatabase(dname);
+}
+
+void parser_create_table(char *tname,int cols)
+{
+	if(globalstructures->resultSet.size()>0)
+		globalstructures->resultSet.clear();
+	if(globalstructures->resultSetColumnList.size()>0)
+		globalstructures->resultSetColumnList.clear();
+	if(globalstructures->insert_type.size()>0)
+		globalstructures->insert_type.clear();
+	if(globalstructures->insert_values.size()>0)
+		globalstructures->insert_values.clear();
+	if(globalstructures->whereExprList.size()>0)
+		globalstructures->whereExprList.clear();
+
+	//create table test(id,rollno,name);
+	globalstructures->schema.tableName=tname;//table name
+	globalstructures->schema.noofcolumns=cols;//integer of columns in my table is 2
+	int i;
+	for(i=0;i<cols;i++)
+	{
+		globalstructures->schema.columnnames.push_back(coloumns[i]);
+		if(strcmp(datatype[i].c_str(),"integer"))
+		{
+		    globalstructures->schema.fieldType.push_back(0);
+		}
+		else
+		{
+		    globalstructures->schema.fieldType.push_back(2);
+		}
+		globalstructures->schema.field_length.push_back(fieldlength[i]);
+		globalstructures->schema.constraints.push_back("");
+		globalstructures->schema.default_values.push_back("default values");
+		
+	}	
+	createTable();
+	globalstructures->resultSet.clear();
+	globalstructures->resultSetColumnList.clear();
+}
+
+
+void parser_insert_values(char *tname)
+{	
+	globalstructures->tablename=tname;
+	int i,j;
+	clock_t start=clock();
+	//for(j=0;j<5;j++)
+	//{
+	if(globalstructures->resultSet.size()>0)
+		globalstructures->resultSet.clear();
+	if(globalstructures->resultSetColumnList.size()>0)
+		globalstructures->resultSetColumnList.clear();
+	if(globalstructures->insert_type.size()>0)
+		globalstructures->insert_type.clear();
+	if(globalstructures->insert_values.size()>0)
+		globalstructures->insert_values.clear();
+	if(globalstructures->whereExprList.size()>0)
+		globalstructures->whereExprList.clear();
+	
+	for(i=0;i<globalstructures->schema.noofcolumns;i++)
+	{
+		globalstructures->insert_values.push_back(insertAttributes[i]);
+		globalstructures->insert_type.push_back(inserttype[i]);
+	}	
+	insertRoutine();
+	//}
+	printf("\nTime elapsed for Inserting Entries: %f\n", ((double)clock() - start) / CLOCKS_PER_SEC);
+	dbheader_init();
+}
+
+#endif

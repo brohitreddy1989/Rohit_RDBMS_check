@@ -1,0 +1,1547 @@
+#include<iostream>//For file operations in c++
+#include<stdio.h>
+#include<stdlib.h>
+#include<fcntl.h>
+#include<string.h>
+#include<string>
+#include<cstring>
+#include <iostream>//For file operations in c++
+#include <fstream>//For file operations
+#include "dbheader.h"
+#include "globalstructures.h"
+#include "conversions.h"
+#include "schema.h"
+#include "exprinfo.h"
+#include <algorithm>
+#include <vector>
+//#include "datapage.h"
+//#include "dbheader.h"
+using namespace std;
+
+void initialize_defaultavalues()
+{
+	PAGE_SIZE=512;
+	globalstructures=new globalStructures();
+
+}
+
+
+
+
+int initialize_path(char *dbname)//creating the file if it is not there and also setting some variables
+{
+	int fd=0;
+
+	//path="/home/associatedean/workspace/Adbms/dbengine/Data";
+
+
+
+	printf("%s\n",path);
+	fflush(stdout);
+	strcat(path,dbname);
+	printf("%s\n",path);
+	fflush(stdout);
+	fd=open(path,O_RDWR);
+
+	if(fd>0)
+	{
+					printf("File already exist");
+					fflush(stdout);
+					return 0;
+	}
+
+	fd=open(path,O_CREAT,0666);
+
+	if(fd==-1)
+	{
+					printf("\n File Cannot Be Created");
+					fflush(stdout);
+					return 0;
+	}
+
+	close(fd);
+	return 1;
+
+}
+
+
+int initFreeList(char *dbname)
+{
+	long counter=3;
+	long i=2;
+	int check;
+	char *buffer=(char*)calloc(1,PAGE_SIZE);
+
+	maindbHeader->nextFreePageNumber=1;//If you need any page you need to come here for the pageno
+	maindbHeader->freeCounter=-1;
+
+	memcpy(&buffer[0],&i,sizeof(i));//writing 2
+	maindbHeader->state=0;
+
+
+	check=initialize_path(dbname);//creating the database for persistent storage
+	if(check==0)
+	{
+		printf("File Not created successfully");
+		free(buffer);
+		return -1;
+	}
+
+	check=writePage(buffer,1);//writing the buffer into the data page
+	if(check==-1)
+	{
+		printf("Unable to write the page");
+		free(buffer);
+		return -1;
+	}
+	free(buffer);
+
+	return 0;
+}
+
+int writePage(void *buffer,long pagenumber)
+{
+	int fd;
+	fd=open(path,O_WRONLY, 0644);
+
+	if (fd < 0)
+	    return -1;
+
+	lseek(fd,pagenumber*PAGE_SIZE,SEEK_SET);
+
+	if(write(fd,buffer,PAGE_SIZE)==-1)
+		return false;
+
+
+	close(fd);
+	return true;
+}
+
+int readPage(void *buffer,long pagenumber)
+{
+	int fd;
+	fd=open(path,O_RDONLY,0644);
+
+	if (fd < 0)
+	    return -1;
+
+	if(lseek(fd,pagenumber*PAGE_SIZE,SEEK_SET) == -1)
+	    return false;
+	if(read(fd,buffer,PAGE_SIZE)==-1)
+	    return false;
+
+	return true;
+}
+
+long getFreePage()
+{
+	long freePage;
+	long temp;
+
+	//char *buffer=(char*)malloc(PAGE_SIZE);
+
+	if(maindbHeader->state == 0)//currently i am working only on creation while deletion state 1
+	{							//will be useful
+		freePage = maindbHeader->nextFreePageNumber;
+		maindbHeader->nextFreePageNumber++;
+		if(freePage==3)
+			printf("HII");
+		printf("Free Page Number--->%d\n",freePage);
+		return freePage;
+	}
+
+
+	return 0;//just for completion sake i kept this
+}
+
+
+
+int createDatabase(char *dbname)
+{
+
+
+
+	maindbHeader = (MainDBHeader*) calloc(1,PAGE_SIZE);
+
+	initFreeList(dbname);//initializing it and creating a file for storing
+
+	printf("%s %d\n",dbname,PAGE_SIZE);
+	fflush(stdout);
+
+
+
+	maindbHeader->numberOfColumns = 0;//Initially so 0
+	maindbHeader->numberOfIndexes = 0;
+	maindbHeader->numberOfTables = 0;
+
+	maindbHeader->pageNumber = 0;//Remember always the page number of the DBHeaderPage will be 0
+	maindbHeader->priority = 0;//0 is the highest priority
+	maindbHeader->sysTablePageNumber = 1;//Always the page number of the sysTablePageNumber will be 1
+	maindbHeader->sysColumnPageNumber = 2;
+	maindbHeader->sysIndexPageNumber = 3;
+	maindbHeader->pageSize = PAGE_SIZE;
+	strcpy(maindbHeader->databaseName,dbname);
+
+	//Initialize Systables,Syscolumns, SysIndex DirectoryPages
+	DirectoryPage *directoryPage;
+    int i=0;
+	for(i=1;i<=3;i++)
+	{
+		directoryPage = (DirectoryPage*) calloc(1,PAGE_SIZE);
+		directoryPage->pageNumber = getFreePage();
+
+		directoryPage->priority = 1;
+		directoryPage->currNoOfDE = 0;
+		directoryPage->maxNoOfDE = (PAGE_SIZE - sizeof(DirectoryPage)-1)/sizeof(DirectoryEntry);
+		directoryPage->maxFreeSpace = PAGE_SIZE - (sizeof(datapage)-1);
+		directoryPage->nextDirPageNumber = -1;
+
+		writePage(directoryPage,directoryPage->pageNumber);
+		free(directoryPage);
+
+	}
+
+	int offset=0;
+
+	int sysTableRecordSize=0;
+	int sysColumnRecordSize=0;
+
+	char *sysTableRecord;
+	char *sysColumnRecord;
+
+	// sysTables
+	long tableTid;
+	char tableName[40];
+	long tableHeaderPage;
+
+	// sysColumns
+	long columnTableId;
+	long columnId;
+	char colName[30];
+	int fieldType;
+	int fieldLength;
+	int constraint;
+	char defaultValues[30];
+
+	// sysIndex
+	long indexId;
+	char indexName[30];
+	char indexTableName[40];
+	char indexColName[40];
+	long indexHeaderPage;
+
+	sysTableRecordSize=sizeof(tableTid)+sizeof(tableName)+sizeof(tableHeaderPage);
+	
+	sysColumnRecordSize=(sizeof(tableTid)+sizeof(columnId)+sizeof(colName)+sizeof(fieldType)+sizeof(fieldLength)+sizeof(constraint)+sizeof(defaultValues));
+	
+
+	int i1=0;
+	//Add SYS TABLE record into SYSTABLE
+	for(i1=0;i1<3;i1++)
+	{
+		//while creating database we will create 3 tables by default
+		//so it will be repeated 3 times
+		 sysTableRecord=(char*)calloc(1,sysTableRecordSize);
+		 tableTid=maindbHeader->numberOfTables++;
+
+
+		 if(i1 == 0)
+		        strcpy(tableName,"SYS_TAB");
+		 else if(i1 == 1)
+		        strcpy(tableName,"SYS_COL");
+		 else
+		        strcpy(tableName,"SYS_IND");
+
+		 strcat(tableName,"\0");
+
+		 tableHeaderPage=i1+1;
+		 	 offset=0;
+
+		  	  //copying the Tid,tableName,tableHeaderPage values into sysTableRecord
+			  memcpy(&sysTableRecord[offset],&tableTid,sizeof(tableTid));
+			  	  offset+=sizeof(tableTid);
+			  memcpy(&sysTableRecord[offset],tableName,sizeof(tableName));
+			  	  offset+=sizeof(tableName);
+			  memcpy(&sysTableRecord[offset],&tableHeaderPage,sizeof(tableHeaderPage));
+
+			   //inserting into Table the SYS TABLE record this table will always have page number 1
+			  insertIntoTable(sysTableRecord,1,sysTableRecordSize);
+
+		  //From here entering values for the SYS COLUMN...
+		  if(i1==0)
+		  {
+
+			  int j=0;
+			  for(j=0;j<3;j++)
+			  {
+				  sysColumnRecord=(char*)calloc(1,sysColumnRecordSize);
+				  columnTableId=i1;//since 3 tables so i value is enough
+				  columnId=maindbHeader->numberOfColumns++;
+
+				  if(j==0)
+				  {
+				       strcpy(colName,"tid");
+				       fieldType=0;
+				       fieldLength=sizeof(tableTid);
+				  }
+
+				  else if(j==1)
+				  {
+				       strcpy(colName,"tableName");
+				       fieldType=3;
+				       fieldLength=sizeof(tableName);
+				  }
+
+				  else
+				  {
+				       strcpy(colName,"tableHeaderPage");
+				       fieldType=0;
+				       fieldLength=sizeof(tableHeaderPage);
+				  }
+
+				  constraint = CONSTRAINTNOTNULL;//check this i defined in dbheader.h
+				  strcpy(defaultValues,"NULL");
+
+				  offset=0;
+
+				  memcpy(&sysColumnRecord[offset],&columnTableId,sizeof(columnTableId));
+				  offset+=sizeof(columnTableId);
+				  memcpy(&sysColumnRecord[offset],&columnId,sizeof(columnId));
+				  offset+=sizeof(columnId);
+				  memcpy(&sysColumnRecord[offset],colName,sizeof(colName));
+				  offset+=sizeof(colName);
+				  memcpy(&sysColumnRecord[offset],&fieldType,sizeof(fieldType));
+				  offset+=sizeof(fieldType);
+				  memcpy(&sysColumnRecord[offset],&fieldLength,sizeof(fieldLength));
+				  offset+=sizeof(fieldLength);
+				  memcpy(&sysColumnRecord[offset],&constraint,sizeof(constraint));
+				  offset+=sizeof(constraint);
+				  memcpy(&sysColumnRecord[offset],defaultValues,sizeof(defaultValues));
+
+				  //why the page number is 2??? since the SYS COLUMN page number is 2...always
+				  insertIntoTable(sysColumnRecord,2,sysColumnRecordSize);
+				  free(sysColumnRecord);
+
+
+			  }//end of inner for loop
+		  }//end of it loop
+
+		  if(i1==1)
+		  {
+
+			  int j=0;
+			  for(j=0;j<7;j++)
+			  {
+				  sysColumnRecord=(char*)calloc(1,sysColumnRecordSize);
+				  columnTableId=i1;
+				  columnId=maindbHeader->numberOfColumns++;
+				  offset=0;
+
+				  if(j==0)
+				  {
+					  strcpy(colName,"tid");
+					  fieldType=0;
+					  fieldLength=sizeof(tableTid);
+				  }
+
+				  else if(j==1)
+				  {
+				       strcpy(colName,"cid");
+				       fieldType=0;
+				       fieldLength=sizeof(columnId);
+				  }
+
+				  else if(j==2)
+				  {
+				       strcpy(colName,"colName");
+				       fieldType=3;
+				       fieldLength=sizeof(colName);
+				  }
+
+				  else if(j==3)
+				  {
+				       strcpy(colName,"fieldType");
+				       fieldType=0;
+				       fieldLength=sizeof(fieldType);
+				  }
+
+				  else if(j==4)
+				  {
+				       strcpy(colName,"fieldLength");
+				       fieldType=0;
+				       fieldLength=sizeof(fieldLength);
+				  }
+
+				  else if(j==5)
+				  {
+				       strcpy(colName,"constraints");
+				       fieldType=3;
+				       fieldLength=sizeof(constraint);
+				  }
+
+				  else
+				  {
+				       strcpy(colName,"defaultValues");
+				       fieldType=3;
+				       fieldLength=sizeof(defaultValues);
+				  }
+
+				  constraint = CONSTRAINTNOTNULL;
+				  strcpy(defaultValues,"NULL");
+				  offset=0;
+
+				  memcpy(&sysColumnRecord[offset],&columnTableId,sizeof(columnTableId));
+				  offset+=sizeof(columnTableId);
+				  memcpy(&sysColumnRecord[offset],&columnId,sizeof(columnId));
+				  offset+=sizeof(columnId);
+				  memcpy(&sysColumnRecord[offset],colName,sizeof(colName));
+				  offset+=sizeof(colName);
+				  memcpy(&sysColumnRecord[offset],&fieldType,sizeof(fieldType));
+				  offset+=sizeof(fieldType);
+				  memcpy(&sysColumnRecord[offset],&fieldLength,sizeof(fieldLength));
+				  offset+=sizeof(fieldLength);
+				  memcpy(&sysColumnRecord[offset],&constraint,sizeof(constraint));
+				  offset+=sizeof(constraint);
+				  memcpy(&sysColumnRecord[offset],defaultValues,sizeof(defaultValues));
+
+				  insertIntoTable(sysColumnRecord,2,sysColumnRecordSize);
+
+				  free(sysColumnRecord);
+
+
+			  }//end of inner for loop
+
+		  }//end of if loop
+
+		  if(i1==2)
+		  {
+			  int j;
+			  for(j=0;j<5;j++)
+			  {
+				  sysColumnRecord=(char*)calloc(1,sysColumnRecordSize);
+				  columnTableId=i1;
+				  columnId=maindbHeader->numberOfColumns++;
+
+				  if(j==0)
+				  {
+				            strcpy(colName,"indexId");
+				            fieldType=0;
+				            fieldLength=sizeof(indexId);
+				  }
+
+				  else if(j==1)
+				  {
+				            strcpy(colName,"indexName");
+				            fieldType=2;
+				            fieldLength=sizeof(indexName);
+				  }
+
+				  else if(j==2)
+				  {
+				             strcpy(colName,"indexTableName");
+				             fieldType=2;
+				             fieldLength=sizeof(indexTableName);
+				  }
+
+				  else if(j==3)
+				  {
+				             strcpy(colName,"indexColName");
+				             fieldType=2;
+				             fieldLength=sizeof(indexColName);
+				  }
+
+				  else if(j==4)
+				  {
+				             strcpy(colName,"indexHeaderPage");
+				             fieldType=0;
+				             fieldLength=sizeof(indexHeaderPage);
+				  }
+
+				  constraint = CONSTRAINTNOTNULL;
+				  strcpy(defaultValues,"NULL");
+				  offset=0;
+				  memcpy(&sysColumnRecord[offset],&columnTableId,sizeof(columnTableId));
+				  offset+=sizeof(columnTableId);
+				  memcpy(&sysColumnRecord[offset],&columnId,sizeof(columnId));
+				  offset+=sizeof(columnId);
+				  memcpy(&sysColumnRecord[offset],colName,sizeof(colName));
+				  offset+=sizeof(colName);
+				  memcpy(&sysColumnRecord[offset],&fieldType,sizeof(fieldType));
+				  offset+=sizeof(fieldType);
+				  memcpy(&sysColumnRecord[offset],&fieldLength,sizeof(fieldLength));
+				  offset+=sizeof(fieldLength);
+				  memcpy(&sysColumnRecord[offset],&constraint,sizeof(constraint));
+				  offset+=sizeof(constraint);
+				  memcpy(&sysColumnRecord[offset],defaultValues,sizeof(defaultValues));
+
+				  insertIntoTable(sysColumnRecord,2,sysColumnRecordSize);
+
+
+				  free(sysColumnRecord);
+
+				}//end of inner for loop
+
+		  }//end of if i==2 loop
+
+		  	  writePage(maindbHeader,0);
+		  	 free(sysTableRecord);
+	}//end of outer for loop
+
+	return 0;
+}
+
+int insertIntoTable(char* record, long directoryPageNumber,int recordSize)
+{
+	if(recordSize>PAGE_SIZE)
+		return false;
+
+	DirectoryPage *directoryPage = (DirectoryPage*)calloc(1,PAGE_SIZE);
+	DirectoryEntry dirEntry;
+	readPage(directoryPage,directoryPageNumber);
+
+	int slotSize=sizeof(slotentry);
+	long dataPageNumber;
+	int flag = 0;
+
+	while((recordSize+slotSize) > directoryPage->maxFreeSpace)
+	{
+		//Go to next directory page
+		directoryPageNumber = directoryPage->nextDirPageNumber;
+		if(directoryPageNumber < 0)
+		{
+		        flag = true;
+		        break;
+		}
+		readPage(directoryPage,directoryPageNumber);
+	}
+
+	if(flag)
+	{
+		//creating a new directory page
+		long tempDirPageNumber=directoryPageNumber;
+		directoryPageNumber=getFreePage();
+		directoryPage->nextDirPageNumber=directoryPageNumber;
+		writePage(directoryPage,directoryPage->pageNumber);//writing it to disk the reason is for updating the nextDirPageNumber
+		initDirectoryPage(directoryPageNumber);
+		readPage(directoryPage,directoryPageNumber);
+	}
+
+
+	int dirEntryNumber=searchDirectoryEntry(record,recordSize,directoryPage);//In searchDirectoryEntry we are finding is there any existing
+																			 //Directory Entry which is enough for this data entry
+
+	//creating a new directory entry
+	if(dirEntryNumber<0)
+	{
+		dataPageNumber=getFreePage();
+		dirEntry.dataPageNumber=dataPageNumber;
+		dirEntry.totalFreeSpace=PAGE_SIZE-(sizeof(datapage)-1);
+		memcpy(getDirectoryEntry(directoryPage,(directoryPage->currNoOfDE+1)),&dirEntry,sizeof(dirEntry));
+		directoryPage->currNoOfDE++;
+		initDataPage(dataPageNumber,directoryPageNumber);
+		insertRecord(record,recordSize,dataPageNumber);
+
+		dirEntryNumber = directoryPage->currNoOfDE;
+	}
+	else
+	{
+		memcpy(&dirEntry,getDirectoryEntry(directoryPage,dirEntryNumber),sizeof(dirEntry));
+		insertRecord(record,recordSize,dirEntry.dataPageNumber);
+	}
+
+	int temp = dirEntry.totalFreeSpace;
+	dirEntry.totalFreeSpace -= (recordSize + sizeof(slotentry));
+	memcpy(getDirectoryEntry(directoryPage,dirEntryNumber),&dirEntry,sizeof(dirEntry));
+
+	//update MaxFreeSpace in directoryPage
+	//This will be useful for faster checking i.e whether there is any chance of inserting data in this directory page or not
+	//since if the MaxFreeSpace is not enough than it will immediately goes through the next directory page
+	if(directoryPage->currNoOfDE == directoryPage->maxNoOfDE)
+		updateMaxFreeSpace(directoryPage);
+
+	writePage(directoryPage,directoryPageNumber);;
+	free(directoryPage);
+
+	return 1;
+}
+
+void updateMaxFreeSpace(DirectoryPage* directoryPage)
+{
+	DirectoryEntry dirEntry;
+
+	//Find max of all the DE and update MaxFreeSpace
+	int maxFreeSpace = 0,i=0;
+	for(i=1;i<=directoryPage->currNoOfDE;i++)
+	{
+		memcpy(&dirEntry,getDirectoryEntry(directoryPage,i),sizeof(DirectoryEntry));
+		if(maxFreeSpace < dirEntry.totalFreeSpace)
+		      maxFreeSpace = dirEntry.totalFreeSpace;
+	}
+	directoryPage->maxFreeSpace = maxFreeSpace;
+}
+
+
+
+
+
+void initDirectoryPage(long directoryPageNumber)
+{
+	DirectoryPage *directoryPage = (DirectoryPage*) calloc(1,PAGE_SIZE);
+	printf("DirectoryPage-->%d\n",directoryPageNumber);
+	directoryPage->pageNumber = directoryPageNumber;
+	directoryPage->priority = 1;
+	directoryPage->currNoOfDE = 0;
+	directoryPage->maxNoOfDE = (PAGE_SIZE - (sizeof(DirectoryPage)-1))/sizeof(DirectoryEntry);
+	directoryPage->maxFreeSpace = PAGE_SIZE - (sizeof(datapage)-1);
+	directoryPage->nextDirPageNumber = -1;//always remember that -1 shows the end of the list of directory pages
+	writePage(directoryPage,directoryPageNumber);
+	readPage(directoryPage,directoryPageNumber);
+	printf("directoryPage->priority---->%d\n",directoryPage->priority);
+	free(directoryPage);
+}
+
+int searchDirectoryEntry(char* record, int recordSize,DirectoryPage *directoryPage)
+{
+	DirectoryEntry dirEntry;
+	int i=0;
+	for(i=1;i<=directoryPage->currNoOfDE;i++)
+	{
+		memcpy(&dirEntry,getDirectoryEntry(directoryPage,i),sizeof(DirectoryEntry));
+		if(dirEntry.totalFreeSpace>=(recordSize+sizeof(slotentry)))
+			break;
+	}
+	if(i>directoryPage->currNoOfDE)
+		return -1;
+	return i;
+}
+
+void initDataPage(long dataPageNumber,long directoryPageNumber)
+{
+	datapage *dataPage=(datapage *)calloc(1,PAGE_SIZE);////stopped here
+	dataPage->cfs=PAGE_SIZE-(sizeof(datapage)-1);
+	dataPage->cfsptr=0;
+	dataPage->dirPageNo=directoryPageNumber;
+	dataPage->pagenumber=dataPageNumber;
+	dataPage->priority=2;
+	dataPage->slotcount=0;
+	writePage(dataPage,dataPageNumber);
+	free(dataPage);
+}
+
+int insertRecord(char *record,int recordSize,long dataPageNumber)
+{
+	datapage *dataPage=(datapage *)calloc(1,PAGE_SIZE);
+	readPage(dataPage,dataPageNumber);
+
+	slotentry slot;
+
+	//for checking and freeslotnumber storage
+	int freeSlotNumber=-1;
+	int negativeFlag=0;
+	int freeFlag=0;
+	int i=0;
+	for(i=1;i<dataPage->slotcount;i++)
+	{
+		slot=Slot(dataPage,i);
+		if(slot.slotsize*-1 == recordSize)
+		{
+			negativeFlag=1;
+			break;
+		}
+
+		//This will be helpful while defragmentation since while defragmenting we won't delete the slot we will just erase the data and
+		//makes the slot size as 0 and pointer points to CFS
+		if(slot.slotsize == 0)
+		{
+			freeSlotNumber=i;//Here we are trying to go to the last free slot so that next time no need to search unnecessarily
+			freeFlag=1;
+		}
+	}
+
+
+
+	int returnFlag=0;//For checking in the below cases whether we had found out any slot
+
+	//This should be given atmost importance since although we had deleted the slot we got the perfect match
+	//that's why this if loop at first
+	if(negativeFlag)
+	{
+		//add your record at slot i
+		slot=Slot(dataPage,i);
+		slot.slotsize=recordSize;
+		Slot(dataPage,i)=slot;
+		returnFlag=1;
+	}
+
+	//It means after defragmenting we had find out the slot
+	else if(freeFlag==1)
+	{
+		 slot = Slot(dataPage,freeSlotNumber);
+		 slot.slotsize = recordSize;
+		 slot.slotaddress = dataPage->cfsptr;//since after defragmented slots need to point to the cfsptr..think u will get
+		 Slot(dataPage,freeSlotNumber) = slot;//writing back
+		 dataPage->cfs -= recordSize;//updating the cfs
+		 dataPage->cfsptr += recordSize;//changing the cfsPtr to point to exact location
+		 returnFlag=1;
+	}
+
+	//It means we had found out one slot for the data
+	if(returnFlag==1)
+	{
+		memcpy(&dataPage->data[slot.slotaddress],record,recordSize);
+		writePage(dataPage,dataPage->pagenumber);
+		free(dataPage);
+		return returnFlag;
+	}
+
+	if(recordSize+sizeof(slotentry)<=dataPage->cfs)
+	{
+		//printf("%d %d %d %d\n",dataPage->cfs,dataPage->cfsptr,dataPage->dirPageNo,dataPage->pagenumber);
+		//fflush(stdout);
+
+		slot.slotsize = recordSize;
+		slot.slotaddress = dataPage->cfsptr;
+		dataPage->cfs -= (recordSize+sizeof(slotentry));
+		dataPage->cfsptr += recordSize;
+		dataPage->slotcount++;
+		Slot(dataPage,dataPage->slotcount)=slot;
+
+		//printf("%d %d %d %d",dataPage->cfs,dataPage->cfsptr,dataPage->dirPageNo,dataPage->pagenumber);
+		//fflush(stdout);
+		memcpy(&dataPage->data[slot.slotaddress],record,recordSize);
+
+		//printf("%d %u %u",dataPage->data[0],&dataPage->data[0],&dataPage->data[slot.slotaddress]);
+		//fflush(stdout);
+
+		writePage(dataPage,dataPageNumber);
+		free(dataPage);
+		return 1;
+	}
+
+	else
+	{
+		//defragmenting the page left over
+		return 1;//need to change this
+	}
+
+	free(dataPage);
+}
+
+int createTable()
+{
+	long tid,theaderpage;//these are used since while storing table name in SYS_TABLE they need
+						 //these two parameters also along with table name and while checking
+						//whether the table is present or not these are needed.
+
+	//In globalstructures->schema.tableName the table name will be placed by the parser or user
+	if(searchSysTables(globalstructures->schema.tableName,tid,theaderpage) == true)
+	{
+	        globalstructures->errorMsg = "TABLE ALREADY EXISTS";
+	        return CREATEFAILEDTABLEALREADYEXISTS;
+	}
+
+	//In globalstructures->schema.tableName the table name will be placed by the parser or user
+	char tableName[40];
+	strcpy(tableName,globalstructures->schema.tableName.c_str());
+	long tableId = maindbHeader->numberOfTables++;
+	theaderpage = getFreePage();//This will be the directory page number for the new table
+	printf("theaderpage->%d\n",theaderpage);
+	initDirectoryPage(theaderpage);
+
+
+
+	//when ever we are creating a new table we need to update that in the SYS TABLE
+	//In SYS TABLE the parameters are tid,theaderpage,tableName
+	int recordSize = sizeof(tid) + sizeof(theaderpage) + sizeof(tableName);
+
+
+	//For the sake of SYS TABLE record
+	char sysTableRecord[recordSize];
+	int offset=0;
+	memcpy(&sysTableRecord[offset],&tableId,sizeof(long));
+	offset += sizeof(long);
+	memcpy(&sysTableRecord[offset],tableName,sizeof(tableName));
+	offset += sizeof(tableName);
+	memcpy(&sysTableRecord[offset],&theaderpage,sizeof(long));
+
+	insertIntoTable(sysTableRecord,1,recordSize);
+
+
+	long columnId;
+	char colName[30];
+	int fieldType;
+	int fieldLength;
+	int constraint;
+	char defaultValues[30];
+
+	recordSize = sizeof(tid) + sizeof(columnId) + sizeof(colName) + sizeof(fieldType) + sizeof(fieldLength) + sizeof(constraint) + sizeof(defaultValues);
+	char sysColumnsRecord[recordSize];
+
+
+
+	int numColumns = globalstructures->schema.noofcolumns;
+	//initDirectoryPage(theaderpage);//This is placed because i am getting an error...for that i.e 09th page number...
+								   //check in my google docs the issue...i.e at 1200 index there page number is displaying perfectly
+								   //but the priority is getting changed..i.e -1 to some IND...no idea why it is happening
+								   //so again setting that so now no issues..(after placing calloc issue is solved)...
+
+	for(int i=0;i<numColumns;i++)
+	{
+		columnId = maindbHeader->numberOfColumns++;
+		strcpy(colName,globalstructures->schema.columnnames.at(i).c_str());
+		fieldType = globalstructures->schema.fieldType.at(i);
+		fieldLength = globalstructures->schema.field_length.at(i);
+
+			if(strcmp(globalstructures->schema.constraints.at(i).c_str(),"NOT NULL")==0)
+			        constraint = CONSTRAINTNOTNULL;
+			else if(strcmp(globalstructures->schema.constraints.at(i).c_str(),"PRIMARY KEY")==0)
+			            constraint = CONSTRAINTPK;
+			else if(strcmp(globalstructures->schema.constraints.at(i).c_str(),"NULL")==0)
+			            constraint = CONSTRAINTNULL;
+			else if(strcmp(globalstructures->schema.constraints.at(i).c_str(),"DEFAULT")==0)
+			            constraint = CONSTRAINTDEFAULT;
+		    else
+			            constraint = -1;
+
+			strcpy(defaultValues,globalstructures->schema.default_values.at(i).c_str());
+			offset = 0;
+			memcpy(&sysColumnsRecord[offset],&tableId,sizeof(tableId));
+			offset += sizeof(tableId);
+			memcpy(&sysColumnsRecord[offset],&columnId,sizeof(columnId));
+			offset += sizeof(columnId);
+			memcpy(&sysColumnsRecord[offset],colName,sizeof(colName));
+			offset += sizeof(colName);
+			memcpy(&sysColumnsRecord[offset],&fieldType,sizeof(fieldType));
+			offset += sizeof(fieldType);
+			memcpy(&sysColumnsRecord[offset],&fieldLength,sizeof(fieldLength));
+			offset += sizeof(fieldLength);
+			memcpy(&sysColumnsRecord[offset],&constraint,sizeof(constraint));
+			offset += sizeof(constraint);
+		    memcpy(&sysColumnsRecord[offset],defaultValues,sizeof(defaultValues));
+		    insertIntoTable(sysColumnsRecord,2,recordSize);
+	}
+
+		writePage(maindbHeader,0);
+//		globalstructures->errorMsg ="TABLE CREATED";
+
+
+
+
+
+		return CREATETABLESUCCESS;
+}
+
+
+
+
+bool searchSysTables(string tableName,long &tid,long &theaderpage)
+{
+	int i,j;
+
+	char tName[40];
+
+	//i.e tid,tableName,tableheaderpage
+	char *record=(char *)calloc(1,(sizeof(long)+sizeof(tName)+sizeof(long)));
+
+	DirectoryPage *directoryPage = (DirectoryPage*)calloc(1,PAGE_SIZE);
+	DirectoryEntry dirEntry;
+
+	slotentry slot;
+
+	datapage *dataPage=(datapage *)calloc(1,PAGE_SIZE);
+	readPage(directoryPage,1);
+	do
+	{
+		for(i=1;i<=directoryPage->currNoOfDE;i++)
+		{
+			memcpy(&dirEntry,getDirectoryEntry(directoryPage,i),sizeof(DirectoryEntry));
+			readPage(dataPage,dirEntry.dataPageNumber);
+			for(j=1;j<=dataPage->slotcount;j++)
+			{
+				slot=Slot(dataPage,j);
+				if(slot.slotsize<=0)
+					continue;
+				memcpy(record,&dataPage->data[slot.slotaddress],slot.slotsize);
+				memcpy(tName,&record[sizeof(tid)],40);
+				if(strcmp(tName,tableName.c_str()) == 0)
+				{
+					//since already name will be der so no need to copy that
+					memcpy(&tid,&record[0],sizeof(tid));
+				    memcpy(&theaderpage,&record[sizeof(tid)+40],sizeof(theaderpage));
+				    free(record);
+				    free(directoryPage);
+				    free(dataPage);
+				    return true;
+				}
+			}
+			if(directoryPage->nextDirPageNumber!=-1)
+			{
+				readPage(directoryPage,directoryPage->nextDirPageNumber);
+			}
+
+
+		}
+	}while(directoryPage->nextDirPageNumber!=-1);
+
+	free(record);
+	free(directoryPage);
+	free(dataPage);
+
+	return false;
+}
+
+
+int updateTable()
+{
+	long tid=-1;
+	long theaderpage;
+
+	if(searchSysTables(globalstructures->tablename,tid,theaderpage) == false || tid < 3)
+	{
+	        globalstructures->errorMsg = "UPDATE FAILED NO SUCH TABLE";
+	        return UPDATEFAILEDNOSUCHTABLE;
+	}
+
+	int numColumns = 0;
+	vector<int> typesVector;
+	vector<int> constraintsVector;
+	vector<int> lengthsVector;
+	vector<string> columnNamesVector;
+	vector<int> offsetsVector;
+
+	int returnValue=getInfoFromSysColumns(tid,numColumns,typesVector,constraintsVector,lengthsVector,columnNamesVector,offsetsVector);
+
+}
+
+int insertRoutine()
+{
+	long tid=-1,theaderpage;
+	searchSysTables(globalstructures->tablename,tid,theaderpage);
+
+
+	if(tid==-1)
+	{
+		printf("Table does not exist----Insert Routine\n");
+		return INSERTFAILEDNOSUCHTABLE;
+	}
+
+	else if(tid < 3 )
+	{
+	    cout<<"Invalid Operation"+globalstructures->tablename+" cant be inserted";
+		return INSERTFAILEDNOSUCHTABLE;
+	}
+
+	int numColumns = 0;
+	vector<int> typesVector;
+	vector<int> constraintsVector;
+	vector<int> lengthsVector;
+	vector<string> columnNamesVector;
+	vector<int> offsetsVector;//This will be used when you are entering only few elements into the table
+							  //at that time this offset vector will specify the exact column position i.e whether it is first or second or third.....
+
+	getInfoFromSysColumns(tid,numColumns,typesVector,constraintsVector,lengthsVector,columnNamesVector,offsetsVector);
+
+	//printf("%d",numColumns);
+	//fflush(stdout);
+	//return 0;
+
+	if(numColumns != globalstructures->insert_values.size())
+	{
+		printf("Insert Failed wrong number of arguments\n");
+		return INSERTIONFAILEDWRONGNOOFARGUMENTS;
+	}
+
+	//printf("globalstructures->insert_type iss  %d \n",globalstructures->insert_type);
+	//fflush(stdout);
+
+	if(typesVector != globalstructures->insert_type)
+	{
+	    printf("Insertion Fails because of Type Mismatch");
+	    return INSERTIONFAILEDTYPEMISMATCH;
+	}
+
+	//checking for lengths whether acceptable lengths are given or not
+
+	int recordSize = 0;
+	for(int i=0;i<globalstructures->insert_type.size();i++)
+	{
+		if(globalstructures->insert_type.at(i) == TYPE_VARCHAR)
+		{
+			if((globalstructures->insert_values.at(i).length()+1) > lengthsVector.at(i))
+			{
+				printf("\n Insertion Failed because of VARCHAR length mismatch");
+				return INSERTIONFAILEDVARCHARLENGTHMISMATCH;
+			}
+
+			else
+				recordSize += globalstructures->insert_values.at(i).length()+1;
+		}
+
+		else
+		        recordSize += sizeof(int);
+	}
+
+	recordSize += numColumns*sizeof(short);//This is used for tag offset in prepareRecord.
+										   //the size of datatypes will be different in different systems and for varchar..for fast accessing also
+	char record[recordSize];
+
+	prepareRecord(record);
+
+	insertIntoTable(record,theaderpage,recordSize);
+
+
+}
+
+void prepareRecord(char *record)
+{
+	int recordOffset = globalstructures->insert_values.size()*sizeof(short);
+	int tagOffset = 0;
+	int intValue = -1;
+	short intSize = sizeof(int);
+	short charSize = 0;
+	char *charValue = NULL;
+	for(int i=0;i<globalstructures->insert_values.size();i++)
+	{
+		switch(globalstructures->insert_type.at(i))
+		{
+		case TYPE_INTEGER:
+			memcpy(&record[tagOffset],&intSize,sizeof(short));
+			tagOffset += sizeof(short);
+			intValue=conversion::string_to_int(globalstructures->insert_values.at(i));
+			memcpy(&record[recordOffset],&intValue,sizeof(intValue));
+			printf("intValue-->%d \n",intValue);
+			fflush(stdout);
+			recordOffset += sizeof(int);
+			break;
+		case TYPE_VARCHAR:
+			charSize = globalstructures->insert_values.at(i).length()+1;
+			memcpy(&record[tagOffset],&charSize,sizeof(short));
+			tagOffset += sizeof(short);
+			charValue = (char*)calloc(1,charSize);
+			strcpy(charValue,globalstructures->insert_values.at(i).c_str());
+			charValue[charSize-1] = '\0';
+			memcpy(&record[recordOffset],charValue,charSize);
+			recordOffset += charSize;
+			printf("charValue-->%s \n",charValue);
+			fflush(stdout);
+			free(charValue);
+			break;
+		}
+	}
+}
+
+
+
+
+int getInfoFromSysColumns(long tid,int &numColumns,vector<int> &typesVector,vector<int> &constraintsVector,vector<int> &lengthsVector,vector<string> &columnNamesVector,vector<int> &offsetsVector)
+{
+	int i,j;
+	long _tid;
+	long cid;
+	char colName[30];
+	int fieldType;
+	int fieldLength;
+	int constraint;
+	char defaultValues[30];
+	int temp_directoryPage_number;
+
+	char *record=(char*)calloc(1,(sizeof(_tid)+sizeof(cid)+sizeof(colName)+sizeof(fieldType)+sizeof(fieldLength)+sizeof(constraint)+sizeof(defaultValues)));
+
+	DirectoryPage *directoryPage=(DirectoryPage *)calloc(1,PAGE_SIZE);
+	DirectoryEntry dirEntry;
+	slotentry slot;
+	datapage *dataPage=(datapage *)calloc(1,PAGE_SIZE);
+	readPage(directoryPage,2);
+
+	do
+	{
+		temp_directoryPage_number=-1;
+		for(i=1;i<=directoryPage->currNoOfDE;i++)
+		{
+			memcpy(&dirEntry,getDirectoryEntry(directoryPage,i),sizeof(DirectoryEntry));
+			readPage(dataPage,dirEntry.dataPageNumber);
+			for(j=1;j<=dataPage->slotcount;j++)
+			{
+				slot = Slot(dataPage,j);
+				if(slot.slotsize <=0)
+				     continue;
+				memcpy(record,&dataPage->data[slot.slotaddress],slot.slotsize);
+				memcpy(&_tid,&record[0],sizeof(_tid));
+
+				if(_tid==tid)
+				{
+					numColumns++;
+					memcpy(colName,&record[2*sizeof(long)],sizeof(colName));//why 2 *sizeof(long) in SYS COLUMNS directorypage the first 2 entries
+																			//are of long data type after that only we will get colNames
+
+					columnNamesVector.push_back(conversion::char_to_string(colName));
+					memcpy(&fieldType,&record[2*sizeof(long)+sizeof(colName)],sizeof(fieldType));
+					typesVector.push_back(fieldType);
+					memcpy(&constraint,&record[2*sizeof(long)+sizeof(colName)+2*sizeof(int)],sizeof(constraint));
+					constraintsVector.push_back(constraint);
+					memcpy(&fieldLength,&record[2*sizeof(long)+sizeof(colName)+sizeof(int)],sizeof(fieldLength));
+					lengthsVector.push_back(fieldLength);
+				}
+			}
+		}
+		if(directoryPage->nextDirPageNumber!= -1)
+		{
+			temp_directoryPage_number=directoryPage->nextDirPageNumber;
+			readPage(directoryPage,directoryPage->nextDirPageNumber);
+		}
+
+	}while(temp_directoryPage_number!=-1);
+
+	int retValue=0;
+
+	if(globalstructures->allColumns){
+	        for(i=0;i<numColumns;i++)
+	            offsetsVector.push_back(i);
+	}
+	else
+	{
+		vector<string>::iterator myIterator;
+		for(i=0;i<globalstructures->resultSetColumnList.size();i++){
+			myIterator = find(columnNamesVector.begin(),columnNamesVector.end(),globalstructures->resultSetColumnList.at(i));
+			if(myIterator != columnNamesVector.end()){//exists
+			       offsetsVector.push_back(int(myIterator-columnNamesVector.begin()));
+			       retValue = 2;
+			 }
+			else{
+			       retValue = NOSUCHCOLUMN;
+			       globalstructures->errorMsg = "NO SUCH COLUMN:" + globalstructures->resultSetColumnList.at(i);
+			       cout<<globalstructures->resultSetColumnList.at(i);
+			       break;
+			}
+
+		}
+
+	}
+
+
+	free(record);
+	free(directoryPage);
+	free(dataPage);
+	return retValue;//this will be used while writing else statement... in selectFromTable also....
+
+}
+
+
+void showTables()
+{
+	DirectoryPage *directoryPage=(DirectoryPage*)calloc(1,PAGE_SIZE);
+	DirectoryEntry dirEntry;
+	datapage *dataPage=(datapage*)calloc(1,PAGE_SIZE);
+
+	readPage(directoryPage,1);
+
+	slotentry se;
+	char tableName[40];
+	int temp_storage_directoryPageNumber;//In do while loop it will be useful
+
+	char *record;
+	string tuple;
+	long tid,theaderpage;
+
+	globalstructures->resultSetColumnList.push_back("TableName");
+
+
+	do
+	{
+		temp_storage_directoryPageNumber=-1;
+		for(int i=1;i<=directoryPage->currNoOfDE;i++)
+		{
+			memcpy(&dirEntry,getDirectoryEntry(directoryPage,i),sizeof(DirectoryEntry));
+			readPage(dataPage,dirEntry.dataPageNumber);
+			for(int j=1;j<=dataPage->slotcount;j++)
+			{
+				se=Slot(dataPage,j);
+				if(se.slotsize <= 0)
+				continue;
+				record=(char*)calloc(1,se.slotsize);
+				memcpy(record,&dataPage->data[se.slotaddress],se.slotsize);
+				memcpy(&tid,&record[0],sizeof(tid));
+				memcpy(&tableName,&record[sizeof(long)],sizeof(tableName));
+				memcpy(&theaderpage,&record[sizeof(long)+sizeof(tableName)],sizeof(theaderpage));
+				tuple=conversion::char_to_string(tableName);
+				globalstructures->resultSet.push_back(tuple);
+				free(record);
+			}
+		}
+		if(directoryPage->nextDirPageNumber != -1)
+		{
+			temp_storage_directoryPageNumber=directoryPage->pageNumber;
+			readPage(directoryPage,directoryPage->nextDirPageNumber);
+		}
+
+	}while(temp_storage_directoryPageNumber!=-1);
+
+	//free(dataPage);
+	free(directoryPage);
+}
+
+int selectFromSysTable()
+{
+	DirectoryPage *directoryPage=(DirectoryPage*)malloc(PAGE_SIZE);
+    DirectoryEntry dirEntry;
+    datapage *dataPage=(datapage*)malloc(PAGE_SIZE);
+
+    readPage(directoryPage,1);
+
+    slotentry se;
+    char tableName[40];
+
+    char *record;
+    string tuple;
+    long tid,theaderpage;
+    globalstructures->resultSetColumnList.push_back("Tid");
+    globalstructures->resultSetColumnList.push_back("TableName");
+    globalstructures->resultSetColumnList.push_back("DirectoryPage");
+
+    do
+    {
+       for(int i=1;i<=directoryPage->currNoOfDE;i++)
+       {
+    	   memcpy(&dirEntry,getDirectoryEntry(directoryPage,i),sizeof(DirectoryEntry));
+    	   readPage(dataPage,dirEntry.dataPageNumber);
+    	   for(int j=1;j<=dataPage->slotcount;j++)
+    	   {
+    	                   se=Slot(dataPage,j);
+    	                   if(se.slotsize <= 0)
+    	                      continue;
+    	                   record=(char*)calloc(1,se.slotsize);
+    	                   memcpy(record,&dataPage->data[se.slotaddress],se.slotsize);
+    	                   memcpy(&tid,&record[0],sizeof(tid));
+    	                   memcpy(&tableName,&record[sizeof(long)],sizeof(tableName));
+    	                   memcpy(&theaderpage,&record[sizeof(long)+sizeof(tableName)],sizeof(theaderpage));
+    	                   tuple = conversion::int_to_string(tid) + "#" + conversion::char_to_string(tableName) + "#" + conversion::int_to_string(theaderpage)+ "#";
+    	                   globalstructures->resultSet.push_back(tuple);
+    	                   free(record);
+    	    }
+
+        }
+
+       if(directoryPage->nextDirPageNumber != -1)
+       {
+    	   	   readPage(directoryPage,directoryPage->pageNumber);
+       }
+
+
+    }while(directoryPage->nextDirPageNumber!=-1);
+
+
+    return 0;
+}
+
+
+int selectFromSysColumn()
+{
+	DirectoryPage *directoryPage=(DirectoryPage*)malloc(PAGE_SIZE);
+	DirectoryEntry dirEntry;
+	datapage *dataPage=(datapage*)malloc(PAGE_SIZE);
+	readPage(directoryPage,2);
+
+	slotentry se;
+
+	long columnTableId;
+	long columnId;
+	char colName[30];
+	int fieldType;
+	int fieldLength;
+
+	globalstructures->resultSetColumnList.push_back("Tid");
+	globalstructures->resultSetColumnList.push_back("Cid");
+	globalstructures->resultSetColumnList.push_back("ColumnName");
+	globalstructures->resultSetColumnList.push_back("FieldType");
+	globalstructures->resultSetColumnList.push_back("FieldLength");
+
+	char *record;
+	string tuple;
+	do
+	{
+	    for(int i=1;i<=directoryPage->currNoOfDE;i++)
+	    {
+	    	memcpy(&dirEntry,getDirectoryEntry(directoryPage,i),sizeof(DirectoryEntry));
+	    	readPage(dataPage,dirEntry.dataPageNumber);
+	    	for(int j=1;j<=dataPage->slotcount;j++)
+	    	{
+	    		se=Slot(dataPage,j);
+	    		if(se.slotsize <= 0)
+	    		   continue;
+
+	    		record=(char*)malloc(se.slotsize);
+	    		memcpy(record,&dataPage->data[se.slotaddress],se.slotsize);
+
+	    		memcpy(&columnTableId,&record[0],sizeof(columnTableId)); // tid
+	    	    memcpy(&columnId,&record[sizeof(columnTableId)],sizeof(columnId));//cid
+
+	    		memcpy(&colName,&record[sizeof(columnTableId)+sizeof(columnId)],sizeof(colName));
+
+	    		memcpy(&fieldType,&record[sizeof(columnTableId)+sizeof(columnId)+sizeof(colName)],sizeof(fieldType));
+	    		memcpy(&fieldLength,&record[sizeof(columnTableId)+sizeof(columnId)+sizeof(colName)+sizeof(fieldType)],sizeof(fieldLength));
+
+	    		tuple = conversion::int_to_string(columnTableId)+ "#" +conversion::int_to_string(columnId) + "#" + conversion::char_to_string(colName) + "#" +"#"+conversion::int_to_string(fieldType)+"#"+conversion::int_to_string(fieldLength)+"#";
+
+	    	    globalstructures->resultSet.push_back(tuple);
+
+	    		free(record);
+	    	}
+
+	    }
+	               if(directoryPage->nextDirPageNumber != -1)
+	               {
+	                   readPage(directoryPage,directoryPage->pageNumber);
+	               }
+
+    }while(directoryPage->nextDirPageNumber!=-1);
+
+	return 0;
+}
+
+
+int selectFromSysIndex()
+{
+	DirectoryPage *directoryPage=(DirectoryPage*)malloc(PAGE_SIZE);
+	DirectoryEntry dirEntry;
+	datapage *dataPage=(datapage*)malloc(PAGE_SIZE);
+
+	readPage(directoryPage,maindbHeader->sysIndexPageNumber);
+
+	slotentry se;
+
+	long indexId,indexHeaderPage;
+	char indexName[30],tableName[40],colName[30];
+	globalstructures->resultSetColumnList.push_back("IndexId");
+	globalstructures->resultSetColumnList.push_back("IndexName");
+	globalstructures->resultSetColumnList.push_back("TableName");
+	globalstructures->resultSetColumnList.push_back("ColumnName");
+	globalstructures->resultSetColumnList.push_back("IndexHeaderPage");
+
+	char *record;
+	string tuple;
+
+	do
+	{
+	    for(int i=1;i<=directoryPage->currNoOfDE;i++)
+	    {
+	    	memcpy(&dirEntry,getDirectoryEntry(directoryPage,i),sizeof(DirectoryEntry));
+	    	readPage(dataPage,dirEntry.dataPageNumber);
+	    	for(int j=1;j<=dataPage->slotcount;j++)
+	    	{
+	    	      se=Slot(dataPage,j);
+	    	      if(se.slotsize <= 0)
+	    	          continue;
+	    	      record=(char*)malloc(se.slotsize);
+	    	      memcpy(record,&dataPage->data[se.slotaddress],se.slotsize);
+
+	    	      memcpy(&indexId,&record[0],sizeof(indexId));
+	    	      memcpy(&indexName[0],&record[sizeof(long)],sizeof(indexName));
+	    	      memcpy(&tableName[0],&record[sizeof(long)+sizeof(indexName)],sizeof(tableName));
+	    	      memcpy(&colName[0],&record[sizeof(long)+sizeof(indexName)+sizeof(tableName)],sizeof(colName));
+	    	      memcpy(&indexHeaderPage,&record[sizeof(long)+sizeof(indexName)+sizeof(tableName)+sizeof(colName)],sizeof(indexHeaderPage));
+
+	    	      tuple = conversion::int_to_string(indexId) + "#" + conversion::char_to_string(indexName) + "#" + conversion::char_to_string(tableName)+ "#"+conversion::char_to_string(colName)+"#"+conversion::int_to_string(indexHeaderPage);
+
+	    	      globalstructures->resultSet.push_back(tuple);
+
+	    	      free(record);
+	    	}
+	    }
+	   if(directoryPage->nextDirPageNumber != -1)
+	   {
+	                readPage(directoryPage,directoryPage->pageNumber);
+	   }
+
+	}while(directoryPage->nextDirPageNumber!=-1);
+
+	return 0;
+}
+
+int selectFromTable()
+{
+	long tid=-1;
+	long theaderpage;
+	if(searchSysTables(globalstructures->tablename,tid,theaderpage) == false)
+	{
+	     globalstructures->errorMsg = "SELECT FAILED NO SUCH TABLE "+globalstructures->tablename;
+	     cout<<globalstructures->tablename;
+	     return SELECTFAILEDNOSUCHTABLE;
+	}
+
+	int numColumns = 0;
+	vector<int> typesVector;
+	vector<int> constraintsVector;
+	vector<int> lengthsVector;
+	vector<string> columnNamesVector;
+	vector<int> offsetsVector;
+	int returnValue = getInfoFromSysColumns(tid,numColumns,typesVector,constraintsVector,lengthsVector,columnNamesVector,offsetsVector);
+
+	if(returnValue == NOSUCHCOLUMN){
+	      globalstructures->errorMsg = "NO SUCH COLUMN IN TABLE BEFORE WHERE ";
+	      printf("\n NO SUCH COLUMN IN TABLE BEFORE WHERE");
+	      return NOSUCHCOLUMN;
+	}
+
+	returnValue = checkTypesAndColumnNamesInWhereList(typesVector,columnNamesVector);
+
+	if(returnValue == NOSUCHCOLUMN || returnValue == SELECTFAILEDTYPEMISMATCH)
+	{
+	      if(returnValue == NOSUCHCOLUMN )
+	      {
+	          globalstructures->errorMsg = "NO SUCH COLUMN IN TABLE AFTER WHERE ";
+
+	      }
+	      else
+	      {
+	          globalstructures->errorMsg = "TYPE MISMATCH IN QUERY AFTER WHERE ";
+	      }
+	            return returnValue;
+    }
+
+	//stopped here
+
+	return 0;
+}
+
+
+int checkTypesAndColumnNamesInWhereList(vector<int> &typesVector, vector<string> &columnNamesVector)
+{
+	int i=0;
+	ExprInfo expr;
+	vector<string>::iterator myIterator;
+	string columnName;
+	int position,Ltype,Itype,typeCounter = 0;
+
+	while(i < globalstructures->whereExprList.size()){
+	        expr = globalstructures->whereExprList.at(i);
+	        if(expr.type == ExprInfo::IDENTIFIER){
+	        	columnName = expr.identifier_value;
+	        	myIterator = find(columnNamesVector.begin(),columnNamesVector.end(),columnName);
+	        	if(myIterator != columnNamesVector.end())
+	        	    position = int(myIterator-columnNamesVector.begin());
+	        	else{
+	        	       globalstructures->errorMsg = "NO SUCH COLUMN:" + columnName;
+	        	       return NOSUCHCOLUMN;
+	        	}
+	        	Itype = typesVector.at(position);
+	        }
+	        else if(expr.type == ExprInfo::LITERAL){
+	        	Ltype = globalstructures->insert_type.at(typeCounter++);
+	        	if(Ltype != Itype){
+	        	         globalstructures->errorMsg = "TYPE MISMATCH AT:" + expr.literal_value;
+	        	         return SELECTFAILEDTYPEMISMATCH;
+	        	}
+	        }
+	        i++;
+
+	}
+}
+
+
+int main()
+{
+	initialize_defaultavalues();//initializing the page size and globalstructures also
+
+	createDatabase("rohit.db");
+
+
+
+	//creation of the table
+	//this is just for checking
+
+		//updating table
+
+					globalstructures->schema.tableName="test";//table name
+					globalstructures->schema.noofcolumns=2;//number of columns in my table is 2
+					globalstructures->schema.columnnames.push_back("id");
+					globalstructures->schema.columnnames.push_back("rollnumber");
+					globalstructures->schema.fieldType.push_back(0);
+					globalstructures->schema.fieldType.push_back(0);
+					globalstructures->schema.field_length.push_back(8);
+					globalstructures->schema.field_length.push_back(8);
+					globalstructures->schema.constraints.push_back("YES");
+					globalstructures->schema.constraints.push_back("YES");
+					globalstructures->schema.default_values.push_back("iam");
+					globalstructures->schema.default_values.push_back("fine");
+				    createTable();
+
+
+				globalstructures->resultSet.clear();
+				globalstructures->resultSetColumnList.clear();
+
+				globalstructures->tablename="test";
+				globalstructures->insert_values.push_back("1");
+				globalstructures->insert_values.push_back("2");
+				globalstructures->insert_type.push_back(0);
+				globalstructures->insert_type.push_back(0);
+				insertRoutine();
+
+				//showing tables in the database
+				showTables();
+
+				//Displaying of Tables in the database
+				cout<<"\n"+globalstructures->resultSetColumnList.at(0);
+				for(int i=0;i<globalstructures->resultSet.size();i++)
+				{
+					printf("\n");
+					cout<<globalstructures->resultSet.at(i);
+				}
+
+
+		globalstructures->resultSet.clear();//Since this was used above we need to clear
+		globalstructures->resultSetColumnList.clear();
+		selectFromSysTable();
+		//Selecting from the Sys Table
+		cout<<"\n-----------------------";
+		cout<<"\nContents of Sys-Table";
+		cout<<"\nTableId#TableName#TableHeaderPage";
+		cout<<"\n-----------------------";
+		for(int i=0;i<globalstructures->resultSet.size();i++)
+		{
+							printf("\n");
+							cout<<globalstructures->resultSet.at(i);
+		}
+
+
+
+		globalstructures->resultSet.clear();//Since this was used above we need to clear
+	    globalstructures->resultSetColumnList.clear();
+	    selectFromSysColumn();
+	    //Selecting from the Sys Column Table
+	    cout<<"\n-----------------------";
+	    cout<<"\nContents of Sys-Column";
+	    cout<<"\nColumnTableId#columnId#colName#fieldType#fieldLength#";
+	    cout<<"\n-----------------------";
+	    for(int i=0;i<globalstructures->resultSet.size();i++)
+	    {
+	    							printf("\n");
+	    							cout<<globalstructures->resultSet.at(i);
+	    }
+
+
+	    globalstructures->resultSet.clear();//Since this was used above we need to clear
+	    globalstructures->resultSetColumnList.clear();
+	    selectFromSysIndex();
+	    //Selecting from the Sys Index Table
+	    cout<<"\n-----------------------";
+	   	cout<<"\nContents of Sys-Index";
+	   	cout<<"\nIndexId#IndexName#TableName#ColumnName#IndexHeaderPage#";
+	   	cout<<"\n-----------------------";
+	   	for(int i=0;i<globalstructures->resultSet.size();i++)
+	    {
+	   		    					printf("\n");
+	   		    					cout<<globalstructures->resultSet.at(i);
+	    }
+
+
+
+	    free(maindbHeader);
+		printf("\n---------------");
+	    printf("\nOver");
+
+		return 0;
+}
+
+
+
+
